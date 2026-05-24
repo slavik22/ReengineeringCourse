@@ -98,6 +98,11 @@ namespace NetSdrClientApp.Messages
             if (bytesPerSample > 4)
                 throw new ArgumentOutOfRangeException(nameof(sampleSize), sampleSize, "Sample size must be 8, 16, 24, or 32 bits.");
 
+            return GetSamplesIterator(bytesPerSample, body);
+        }
+
+        private static IEnumerable<int> GetSamplesIterator(int bytesPerSample, byte[] body)
+        {
             var buffer = new byte[4];
             for (int offset = 0; offset + bytesPerSample <= body.Length; offset += bytesPerSample)
             {

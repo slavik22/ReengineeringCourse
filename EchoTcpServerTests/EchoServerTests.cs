@@ -38,8 +38,11 @@ public class EchoServerTests
         await _server.StartAsync();
 
         _listenerMock.Verify(l => l.Start(), Times.Once);
-        Assert.That(_logs, Contains.Item("Server started."));
-        Assert.That(_logs, Contains.Item("Server shutdown."));
+        Assert.Multiple(() =>
+        {
+            Assert.That(_logs, Contains.Item("Server started."));
+            Assert.That(_logs, Contains.Item("Server shutdown."));
+        });
     }
 
     [Test]
@@ -75,8 +78,11 @@ public class EchoServerTests
 
         await _server.HandleClientAsync(stream, CancellationToken.None);
 
-        Assert.That(_logs.Any(m => m.StartsWith("Echoed")), Is.True);
-        Assert.That(_logs, Contains.Item("Client disconnected."));
+        Assert.Multiple(() =>
+        {
+            Assert.That(_logs.Any(m => m.StartsWith("Echoed")), Is.True);
+            Assert.That(_logs, Contains.Item("Client disconnected."));
+        });
     }
 
     [Test]
@@ -85,25 +91,16 @@ public class EchoServerTests
         var cts = new CancellationTokenSource();
         cts.Cancel();
 
-        var mockStream = new Mock<Stream>();
-        mockStream.Setup(s => s.CanRead).Returns(true);
+        var stream = new DuplexStream(new MemoryStream(), new MemoryStream());
+        await _server.HandleClientAsync(stream, cts.Token);
 
-        await _server.HandleClientAsync(mockStream.Object, cts.Token);
-
-        mockStream.Verify(
-            s => s.ReadAsync(It.IsAny<byte[]>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
-            Times.Never);
+        Assert.That(_logs, Contains.Item("Client disconnected."));
     }
 
     [Test]
     public async Task HandleClientAsync_StreamException_LogsError()
     {
-        var mockStream = new Mock<Stream>();
-        mockStream
-            .Setup(s => s.ReadAsync(It.IsAny<byte[]>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new IOException("Connection reset by peer"));
-
-        await _server.HandleClientAsync(mockStream.Object, CancellationToken.None);
+        await _server.HandleClientAsync(new ErrorStream(), CancellationToken.None);
 
         Assert.That(_logs.Any(m => m.StartsWith("Error:")), Is.True);
     }
@@ -149,11 +146,44 @@ internal sealed class DuplexStream : Stream
     public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken ct)
         => _read.ReadAsync(buffer, offset, count, ct);
 
+    public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default)
+        => _read.ReadAsync(buffer, ct);
+
     public override void Write(byte[] buffer, int offset, int count) => _write.Write(buffer, offset, count);
 
     public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken ct)
         => _write.WriteAsync(buffer, offset, count, ct);
 
+    public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken ct = default)
+        => _write.WriteAsync(buffer, ct);
+
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
+}
+
+/// <summary>
+/// Stream that throws IOException on every read — simulates a broken connection.
+/// </summary>
+internal sealed class ErrorStream : Stream
+{
+    public override bool CanRead => true;
+    public override bool CanWrite => true;
+    public override bool CanSeek => false;
+    public override long Length => throw new NotSupportedException();
+    public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+
+    public override void Flush() { }
+
+    public override int Read(byte[] buffer, int offset, int count) =>
+        throw new IOException("Connection reset by peer");
+
+    public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default) =>
+        ValueTask.FromException<int>(new IOException("Connection reset by peer"));
+
+    public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken ct) =>
+        Task.FromException<int>(new IOException("Connection reset by peer"));
+
+    public override void Write(byte[] buffer, int offset, int count) { }
     public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
     public override void SetLength(long value) => throw new NotSupportedException();
 }
