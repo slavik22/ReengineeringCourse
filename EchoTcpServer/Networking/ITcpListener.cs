@@ -1,8 +1,9 @@
-namespace EchoTcpServer.Networking;
-
-public interface ITcpListener
+namespace EchoTcpServer.Networking
 {
-    void Start();
-    void Stop();
-    Task<Stream> AcceptClientStreamAsync();
+    public interface ITcpListener
+    {
+        void Start();
+        void Stop();
+        Task<Stream> AcceptClientStreamAsync();
+    }
 }

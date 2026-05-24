@@ -2,188 +2,189 @@ using Moq;
 using EchoTcpServer;
 using EchoTcpServer.Networking;
 
-namespace EchoTcpServerTests;
-
-[TestFixture]
-public class EchoServerTests
+namespace EchoTcpServerTests
 {
-    private Mock<ITcpListener> _listenerMock = null!;
-    private List<string> _logs = null!;
-    private EchoServer _server = null!;
-
-    [SetUp]
-    public void SetUp()
+    [TestFixture]
+    public class EchoServerTests
     {
-        _listenerMock = new Mock<ITcpListener>();
-        _logs = new List<string>();
-        _server = new EchoServer(_listenerMock.Object, msg => _logs.Add(msg));
-    }
+        private Mock<ITcpListener> _listenerMock = null!;
+        private List<string> _logs = null!;
+        private EchoServer _server = null!;
 
-    [Test]
-    public void Stop_StopsListenerAndLogs()
-    {
-        _server.Stop();
-
-        _listenerMock.Verify(l => l.Stop(), Times.Once);
-        Assert.That(_logs, Contains.Item("Server stopped."));
-    }
-
-    [Test]
-    public async Task StartAsync_StartsListenerAndLogsShutdown()
-    {
-        _listenerMock
-            .Setup(l => l.AcceptClientStreamAsync())
-            .ThrowsAsync(new ObjectDisposedException("listener"));
-
-        await _server.StartAsync();
-
-        _listenerMock.Verify(l => l.Start(), Times.Once);
-        Assert.Multiple(() =>
+        [SetUp]
+        public void SetUp()
         {
-            Assert.That(_logs, Contains.Item("Server started."));
-            Assert.That(_logs, Contains.Item("Server shutdown."));
-        });
-    }
+            _listenerMock = new Mock<ITcpListener>();
+            _logs = new List<string>();
+            _server = new EchoServer(_listenerMock.Object, msg => _logs.Add(msg));
+        }
 
-    [Test]
-    public async Task StartAsync_AcceptsClientAndLogs()
-    {
-        _listenerMock.SetupSequence(l => l.AcceptClientStreamAsync())
-            .ReturnsAsync(new MemoryStream(new byte[] { 1, 2, 3 }))
-            .ThrowsAsync(new ObjectDisposedException("listener"));
-
-        await _server.StartAsync();
-
-        _listenerMock.Verify(l => l.AcceptClientStreamAsync(), Times.Exactly(2));
-        Assert.That(_logs, Contains.Item("Client connected."));
-    }
-
-    [Test]
-    public async Task HandleClientAsync_EchoesInputToOutput()
-    {
-        var inputData = new byte[] { 0x41, 0x42, 0x43 }; // "ABC"
-        var inputStream = new MemoryStream(inputData);
-        var outputStream = new MemoryStream();
-        var stream = new DuplexStream(inputStream, outputStream);
-
-        await _server.HandleClientAsync(stream, CancellationToken.None);
-
-        Assert.That(outputStream.ToArray(), Is.EqualTo(inputData));
-    }
-
-    [Test]
-    public async Task HandleClientAsync_LogsEchoedBytes()
-    {
-        var stream = new DuplexStream(new MemoryStream(new byte[] { 1, 2 }), new MemoryStream());
-
-        await _server.HandleClientAsync(stream, CancellationToken.None);
-
-        Assert.Multiple(() =>
+        [Test]
+        public void Stop_StopsListenerAndLogs()
         {
-            Assert.That(_logs.Any(m => m.StartsWith("Echoed")), Is.True);
+            _server.Stop();
+
+            _listenerMock.Verify(l => l.Stop(), Times.Once);
+            Assert.That(_logs, Contains.Item("Server stopped."));
+        }
+
+        [Test]
+        public async Task StartAsync_StartsListenerAndLogsShutdown()
+        {
+            _listenerMock
+                .Setup(l => l.AcceptClientStreamAsync())
+                .ThrowsAsync(new ObjectDisposedException("listener"));
+
+            await _server.StartAsync();
+
+            _listenerMock.Verify(l => l.Start(), Times.Once);
+            Assert.Multiple(() =>
+            {
+                Assert.That(_logs, Contains.Item("Server started."));
+                Assert.That(_logs, Contains.Item("Server shutdown."));
+            });
+        }
+
+        [Test]
+        public async Task StartAsync_AcceptsClientAndLogs()
+        {
+            _listenerMock.SetupSequence(l => l.AcceptClientStreamAsync())
+                .ReturnsAsync(new MemoryStream(new byte[] { 1, 2, 3 }))
+                .ThrowsAsync(new ObjectDisposedException("listener"));
+
+            await _server.StartAsync();
+
+            _listenerMock.Verify(l => l.AcceptClientStreamAsync(), Times.Exactly(2));
+            Assert.That(_logs, Contains.Item("Client connected."));
+        }
+
+        [Test]
+        public async Task HandleClientAsync_EchoesInputToOutput()
+        {
+            var inputData = new byte[] { 0x41, 0x42, 0x43 }; // "ABC"
+            var inputStream = new MemoryStream(inputData);
+            var outputStream = new MemoryStream();
+            var stream = new DuplexStream(inputStream, outputStream);
+
+            await _server.HandleClientAsync(stream, CancellationToken.None);
+
+            Assert.That(outputStream.ToArray(), Is.EqualTo(inputData));
+        }
+
+        [Test]
+        public async Task HandleClientAsync_LogsEchoedBytes()
+        {
+            var stream = new DuplexStream(new MemoryStream(new byte[] { 1, 2 }), new MemoryStream());
+
+            await _server.HandleClientAsync(stream, CancellationToken.None);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(_logs.Any(m => m.StartsWith("Echoed")), Is.True);
+                Assert.That(_logs, Contains.Item("Client disconnected."));
+            });
+        }
+
+        [Test]
+        public async Task HandleClientAsync_PreCancelledToken_DoesNotRead()
+        {
+            var cts = new CancellationTokenSource();
+            cts.Cancel();
+
+            var stream = new DuplexStream(new MemoryStream(), new MemoryStream());
+            await _server.HandleClientAsync(stream, cts.Token);
+
             Assert.That(_logs, Contains.Item("Client disconnected."));
-        });
+        }
+
+        [Test]
+        public async Task HandleClientAsync_StreamException_LogsError()
+        {
+            await _server.HandleClientAsync(new ErrorStream(), CancellationToken.None);
+
+            Assert.That(_logs.Any(m => m.StartsWith("Error:")), Is.True);
+        }
+
+        [Test]
+        public async Task HandleClientAsync_EmptyStream_LogsDisconnected()
+        {
+            var emptyStream = new DuplexStream(new MemoryStream(Array.Empty<byte>()), new MemoryStream());
+
+            await _server.HandleClientAsync(emptyStream, CancellationToken.None);
+
+            Assert.That(_logs, Contains.Item("Client disconnected."));
+        }
     }
 
-    [Test]
-    public async Task HandleClientAsync_PreCancelledToken_DoesNotRead()
+    /// <summary>
+    /// Reads from one stream, writes to another — simulates a bidirectional client connection.
+    /// </summary>
+    internal sealed class DuplexStream : Stream
     {
-        var cts = new CancellationTokenSource();
-        cts.Cancel();
+        private readonly Stream _read;
+        private readonly Stream _write;
 
-        var stream = new DuplexStream(new MemoryStream(), new MemoryStream());
-        await _server.HandleClientAsync(stream, cts.Token);
+        public DuplexStream(Stream read, Stream write)
+        {
+            _read = read;
+            _write = write;
+        }
 
-        Assert.That(_logs, Contains.Item("Client disconnected."));
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush() => _write.Flush();
+        public override int Read(byte[] buffer, int offset, int count) => _read.Read(buffer, offset, count);
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken ct)
+            => _read.ReadAsync(buffer, offset, count, ct);
+
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default)
+            => _read.ReadAsync(buffer, ct);
+
+        public override void Write(byte[] buffer, int offset, int count) => _write.Write(buffer, offset, count);
+
+        public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken ct)
+            => _write.WriteAsync(buffer, offset, count, ct);
+
+        public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken ct = default)
+            => _write.WriteAsync(buffer, ct);
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
     }
 
-    [Test]
-    public async Task HandleClientAsync_StreamException_LogsError()
+    /// <summary>
+    /// Stream that throws IOException on every read — simulates a broken connection.
+    /// </summary>
+    internal sealed class ErrorStream : Stream
     {
-        await _server.HandleClientAsync(new ErrorStream(), CancellationToken.None);
+        public override bool CanRead => true;
+        public override bool CanWrite => true;
+        public override bool CanSeek => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
 
-        Assert.That(_logs.Any(m => m.StartsWith("Error:")), Is.True);
+        public override void Flush() { }
+
+        public override int Read(byte[] buffer, int offset, int count) =>
+            throw new IOException("Connection reset by peer");
+
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default) =>
+            ValueTask.FromException<int>(new IOException("Connection reset by peer"));
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken ct) =>
+            Task.FromException<int>(new IOException("Connection reset by peer"));
+
+        public override void Write(byte[] buffer, int offset, int count) { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
     }
-
-    [Test]
-    public async Task HandleClientAsync_EmptyStream_LogsDisconnected()
-    {
-        var emptyStream = new DuplexStream(new MemoryStream(Array.Empty<byte>()), new MemoryStream());
-
-        await _server.HandleClientAsync(emptyStream, CancellationToken.None);
-
-        Assert.That(_logs, Contains.Item("Client disconnected."));
-    }
-}
-
-/// <summary>
-/// Reads from one stream, writes to another — simulates a bidirectional client connection.
-/// </summary>
-internal sealed class DuplexStream : Stream
-{
-    private readonly Stream _read;
-    private readonly Stream _write;
-
-    public DuplexStream(Stream read, Stream write)
-    {
-        _read = read;
-        _write = write;
-    }
-
-    public override bool CanRead => true;
-    public override bool CanSeek => false;
-    public override bool CanWrite => true;
-    public override long Length => throw new NotSupportedException();
-    public override long Position
-    {
-        get => throw new NotSupportedException();
-        set => throw new NotSupportedException();
-    }
-
-    public override void Flush() => _write.Flush();
-    public override int Read(byte[] buffer, int offset, int count) => _read.Read(buffer, offset, count);
-
-    public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken ct)
-        => _read.ReadAsync(buffer, offset, count, ct);
-
-    public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default)
-        => _read.ReadAsync(buffer, ct);
-
-    public override void Write(byte[] buffer, int offset, int count) => _write.Write(buffer, offset, count);
-
-    public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken ct)
-        => _write.WriteAsync(buffer, offset, count, ct);
-
-    public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken ct = default)
-        => _write.WriteAsync(buffer, ct);
-
-    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-    public override void SetLength(long value) => throw new NotSupportedException();
-}
-
-/// <summary>
-/// Stream that throws IOException on every read — simulates a broken connection.
-/// </summary>
-internal sealed class ErrorStream : Stream
-{
-    public override bool CanRead => true;
-    public override bool CanWrite => true;
-    public override bool CanSeek => false;
-    public override long Length => throw new NotSupportedException();
-    public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
-
-    public override void Flush() { }
-
-    public override int Read(byte[] buffer, int offset, int count) =>
-        throw new IOException("Connection reset by peer");
-
-    public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default) =>
-        ValueTask.FromException<int>(new IOException("Connection reset by peer"));
-
-    public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken ct) =>
-        Task.FromException<int>(new IOException("Connection reset by peer"));
-
-    public override void Write(byte[] buffer, int offset, int count) { }
-    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-    public override void SetLength(long value) => throw new NotSupportedException();
 }
