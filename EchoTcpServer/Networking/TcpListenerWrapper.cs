@@ -1,23 +1,24 @@
 using System.Net;
 using System.Net.Sockets;
 
-namespace EchoTcpServer.Networking;
-
-public class TcpListenerWrapper : ITcpListener
+namespace EchoTcpServer.Networking
 {
-    private readonly TcpListener _listener;
-
-    public TcpListenerWrapper(int port)
+    public class TcpListenerWrapper : ITcpListener
     {
-        _listener = new TcpListener(IPAddress.Any, port);
-    }
+        private readonly TcpListener _listener;
 
-    public void Start() => _listener.Start();
-    public void Stop() => _listener.Stop();
+        public TcpListenerWrapper(int port)
+        {
+            _listener = new TcpListener(IPAddress.Any, port);
+        }
 
-    public async Task<Stream> AcceptClientStreamAsync()
-    {
-        var client = await _listener.AcceptTcpClientAsync();
-        return client.GetStream();
+        public void Start() => _listener.Start();
+        public void Stop() => _listener.Stop();
+
+        public async Task<Stream> AcceptClientStreamAsync()
+        {
+            var client = await _listener.AcceptTcpClientAsync();
+            return client.GetStream();
+        }
     }
 }
