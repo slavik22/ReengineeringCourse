@@ -105,7 +105,7 @@ namespace NetSdrClientApp.Messages
             sampleSize /= 8; //to bytes
             if (sampleSize  > 4)
             {
-                throw new ArgumentOutOfRangeException();
+                throw new ArgumentOutOfRangeException(nameof(sampleSize), sampleSize, "Sample size must be 8, 16, 24, or 32 bits.");
             }
 
             var bodyEnumerable = body as IEnumerable<byte>;
