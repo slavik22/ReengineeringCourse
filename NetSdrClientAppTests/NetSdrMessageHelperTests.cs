@@ -64,6 +64,46 @@ namespace NetSdrClientAppTests
             Assert.That(parametersBytes.Count(), Is.EqualTo(parametersLength));
         }
 
+        [Test]
+        public void TranslateMessageRoundTripTest()
+        {
+            // arrange — build a SetControlItem message then parse it back
+            var parameters = new byte[] { 0x01, 0x02, 0x03, 0x04, 0x05 };
+            var msg = NetSdrMessageHelper.GetControlItemMessage(
+                NetSdrMessageHelper.MsgTypes.SetControlItem,
+                NetSdrMessageHelper.ControlItemCodes.ReceiverFrequency,
+                parameters);
+
+            // act
+            bool success = NetSdrMessageHelper.TranslateMessage(msg,
+                out var type, out var itemCode, out _, out var body);
+
+            // assert
+            Assert.That(success, Is.True);
+            Assert.That(type, Is.EqualTo(NetSdrMessageHelper.MsgTypes.SetControlItem));
+            Assert.That(itemCode, Is.EqualTo(NetSdrMessageHelper.ControlItemCodes.ReceiverFrequency));
+            Assert.That(body, Is.EqualTo(parameters));
+        }
+
+        [Test]
+        public void GetSamples16BitReturnsCorrectCountTest()
+        {
+            // 6 bytes → 3 samples of 16 bits
+            var body = new byte[] { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06 };
+
+            var samples = NetSdrMessageHelper.GetSamples(16, body).ToList();
+
+            Assert.That(samples.Count, Is.EqualTo(3));
+        }
+
+        [Test]
+        public void GetSamplesThrowsForOversizedBitsTest()
+        {
+            // 40 bits / 8 = 5 bytes > 4 → ArgumentOutOfRangeException
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                NetSdrMessageHelper.GetSamples(40, new byte[8]).ToList());
+        }
+
         //TODO: add more NetSdrMessageHelper tests
     }
 }
