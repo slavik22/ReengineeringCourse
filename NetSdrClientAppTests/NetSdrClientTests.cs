@@ -1,5 +1,6 @@
 ﻿using Moq;
 using NetSdrClientApp;
+using NetSdrClientApp.Messages;
 using NetSdrClientApp.Networking;
 
 namespace NetSdrClientAppTests;
@@ -139,5 +140,36 @@ public class NetSdrClientTests
         _tcpMock.Verify(tcp => tcp.SendMessageAsync(It.IsAny<byte[]>()), Times.Exactly(4));
     }
 
-    //TODO: cover the rest of the NetSdrClient code here
+    [Test]
+    public async Task UdpMessageReceived_ValidDataItem_DoesNotThrow()
+    {
+        await ConnectAsyncTest();
+        await _client.StartIQAsync();
+
+        // build a valid DataItem2 payload: 2-byte sequence number + sample bytes
+        var seqNum = BitConverter.GetBytes((ushort)1);
+        var sampleData = new byte[] { 0x0A, 0x0B, 0x0C, 0x0D }; // 2 × 16-bit samples
+        var payload = seqNum.Concat(sampleData).ToArray();
+        var msg = NetSdrMessageHelper.GetDataItemMessage(NetSdrMessageHelper.MsgTypes.DataItem2, payload);
+
+        Assert.DoesNotThrow(() =>
+            _updMock.Raise(udp => udp.MessageReceived += null, _updMock.Object, msg));
+
+        // cleanup artefact created by the handler
+        if (File.Exists("samples.bin"))
+            File.Delete("samples.bin");
+    }
+
+    [Test]
+    public async Task ConnectAsync_AlreadyConnected_DoesNotReconnect()
+    {
+        await ConnectAsyncTest(); // connects and sends 3 setup messages
+
+        // act — call ConnectAsync again while already connected
+        await _client.ConnectAsync();
+
+        // assert — still only 3 messages (no second setup)
+        _tcpMock.Verify(tcp => tcp.Connect(), Times.Once);
+        _tcpMock.Verify(tcp => tcp.SendMessageAsync(It.IsAny<byte[]>()), Times.Exactly(3));
+    }
 }
