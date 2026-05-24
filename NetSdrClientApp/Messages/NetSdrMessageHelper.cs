@@ -1,7 +1,6 @@
 ﻿
 namespace NetSdrClientApp.Messages
 {
-    //TODO: analyze possible use of [StructLayout] for better performance and readability 
     public static class NetSdrMessageHelper
     {
         private const short _maxMessageLength = 8191;
@@ -44,20 +43,13 @@ namespace NetSdrClientApp.Messages
 
         private static byte[] GetMessage(MsgTypes type, ControlItemCodes itemCode, byte[] parameters)
         {
-            var itemCodeBytes = Array.Empty<byte>();
-            if (itemCode != ControlItemCodes.None)
-            {
-                itemCodeBytes = BitConverter.GetBytes((ushort)itemCode);
-            }
+            var itemCodeBytes = itemCode != ControlItemCodes.None
+                ? BitConverter.GetBytes((ushort)itemCode)
+                : Array.Empty<byte>();
 
             var headerBytes = GetHeader(type, itemCodeBytes.Length + parameters.Length);
 
-            List<byte> msg = new List<byte>();
-            msg.AddRange(headerBytes);
-            msg.AddRange(itemCodeBytes);
-            msg.AddRange(parameters);
-
-            return msg.ToArray();
+            return [.. headerBytes, .. itemCodeBytes, .. parameters];
         }
 
         public static bool TranslateMessage(byte[] msg, out MsgTypes type, out ControlItemCodes itemCode, out ushort sequenceNumber, out byte[] body)
@@ -102,23 +94,16 @@ namespace NetSdrClientApp.Messages
 
         public static IEnumerable<int> GetSamples(ushort sampleSize, byte[] body)
         {
-            sampleSize /= 8; //to bytes
-            if (sampleSize  > 4)
-            {
+            int bytesPerSample = sampleSize / 8;
+            if (bytesPerSample > 4)
                 throw new ArgumentOutOfRangeException(nameof(sampleSize), sampleSize, "Sample size must be 8, 16, 24, or 32 bits.");
-            }
 
-            var bodyEnumerable = body as IEnumerable<byte>;
-            var prefixBytes = Enumerable.Range(0, 4 - sampleSize)
-                                      .Select(b => (byte)0);
-
-            while (bodyEnumerable.Count() >= sampleSize)
+            var buffer = new byte[4];
+            for (int offset = 0; offset + bytesPerSample <= body.Length; offset += bytesPerSample)
             {
-                yield return BitConverter.ToInt32(bodyEnumerable
-                    .Take(sampleSize)
-                    .Concat(prefixBytes)
-                    .ToArray());
-                bodyEnumerable = bodyEnumerable.Skip(sampleSize);
+                Array.Clear(buffer, 0, 4);
+                Array.Copy(body, offset, buffer, 0, bytesPerSample);
+                yield return BitConverter.ToInt32(buffer, 0);
             }
         }
 
