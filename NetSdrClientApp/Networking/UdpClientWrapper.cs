@@ -1,7 +1,5 @@
 using System.Net;
 using System.Net.Sockets;
-using System.Security.Cryptography;
-using System.Text;
 
 namespace NetSdrClientApp.Networking
 {
@@ -36,7 +34,7 @@ namespace NetSdrClientApp.Networking
             }
             catch (OperationCanceledException)
             {
-                //empty
+                // cancellation requested — no action needed
             }
             catch (Exception ex)
             {
@@ -61,13 +59,11 @@ namespace NetSdrClientApp.Networking
 
         public void Exit() => StopListening();
 
-        public override int GetHashCode()
-        {
-            var payload = $"{nameof(UdpClientWrapper)}|{_localEndPoint.Address}|{_localEndPoint.Port}";
+        public override int GetHashCode() =>
+            HashCode.Combine(_localEndPoint.Address, _localEndPoint.Port);
 
-            var hash = MD5.HashData(Encoding.UTF8.GetBytes(payload));
-
-            return BitConverter.ToInt32(hash, 0);
-        }
+        public override bool Equals(object? obj) =>
+            obj is UdpClientWrapper other &&
+            _localEndPoint.Equals(other._localEndPoint);
     }
 }

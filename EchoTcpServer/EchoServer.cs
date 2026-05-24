@@ -6,7 +6,7 @@ public class EchoServer
 {
     private readonly ITcpListener _listener;
     private readonly Action<string> _log;
-    private CancellationTokenSource _cts = new();
+    private readonly CancellationTokenSource _cts = new();
 
     public EchoServer(ITcpListener listener, Action<string>? log = null)
     {
@@ -46,9 +46,9 @@ public class EchoServer
                 int bytesRead;
 
                 while (!token.IsCancellationRequested
-                    && (bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length, token)) > 0)
+                    && (bytesRead = await stream.ReadAsync(buffer.AsMemory(), token)) > 0)
                 {
-                    await stream.WriteAsync(buffer, 0, bytesRead, token);
+                    await stream.WriteAsync(buffer.AsMemory(0, bytesRead), token);
                     _log($"Echoed {bytesRead} bytes.");
                 }
             }
